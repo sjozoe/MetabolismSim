@@ -1,37 +1,34 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Utensils, Battery, BatteryCharging, Info, AlertCircle, Play, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Activity, Utensils, Battery, BatteryCharging, Info, AlertCircle, RotateCcw } from 'lucide-react';
 
 const MetabolismSim = () => {
   // --- 狀態管理 ---
   // 0-100 的數值表示填充百分比
   const [stomachContent, setStomachContent] = useState(0);
-  const [bloodSugar, setBloodSugar] = useState(50); // 理想值約 50 (代表正常血糖)
-  const [glycogenStore, setGlycogenStore] = useState(30); // 肝醣 (短期儲存)
-  const [fatStore, setFatStore] = useState(10); // 脂肪 (長期儲存)
-  const [isDigesting, setIsDigesting] = useState(false);
+  const [bloodSugar, setBloodSugar] = useState(50);
+  const [glycogenStore, setGlycogenStore] = useState(30);
+  const [fatStore, setFatStore] = useState(10);
   const [isExercising, setIsExercising] = useState(false);
   const [particles, setParticles] = useState([]);
   const [message, setMessage] = useState("請點擊「進食」開始觀察能量轉換過程。");
   
   // --- 常數與設定 ---
-  const MAX_STOMACH = 100;
   const DIGESTION_RATE = 2;
   const ABSORPTION_RATE = 1.5;
-  const BASAL_METABOLIC_RATE = 0.2; // 基礎代謝
+  const BASAL_METABOLIC_RATE = 0.2;
   const EXERCISE_BURN_RATE = 3.0;
   const MAX_GLYCOGEN = 100;
   
   // --- 粒子動畫邏輯 ---
-  // 產生一個唯一的 ID
   const generateId = () => Math.random().toString(36).substr(2, 9);
 
-  // 新增粒子
-  const addParticles = (count, type, startPos, endPos) => {
+  // 使用 useCallback 包裝 addParticles 以避免依賴警告
+  const addParticles = useCallback((count, type, startPos, endPos) => {
     const newParticles = [];
     for (let i = 0; i < count; i++) {
       newParticles.push({
         id: generateId(),
-        type, // 'food', 'glucose', 'fat'
+        type,
         start: startPos,
         end: endPos,
         progress: 0,
@@ -39,69 +36,57 @@ const MetabolismSim = () => {
       });
     }
     setParticles(prev => [...prev, ...newParticles]);
-  };
+  }, []);
 
   // --- 主要模擬循環 (Game Loop) ---
   useEffect(() => {
     const interval = setInterval(() => {
       
-      // 1. 基礎代謝消耗 (優先消耗血糖，血糖不足消耗肝醣，再不足消耗脂肪)
+      // 1. 基礎代謝消耗
       let energyNeeded = isExercising ? EXERCISE_BURN_RATE : BASAL_METABOLIC_RATE;
       
-      // 消耗邏輯
       if (bloodSugar > 40) {
-        setBloodSugar(prev => Math.max(30, prev - energyNeeded * 0.5)); // 血糖波動
-        energyNeeded *= 0.5; // 剩餘需求
+        setBloodSugar(prev => Math.max(30, prev - energyNeeded * 0.5));
+        energyNeeded *= 0.5;
       }
       
       if (energyNeeded > 0 && glycogenStore > 0) {
         setGlycogenStore(prev => Math.max(0, prev - energyNeeded));
-        // 視覺效果：肝醣分解為能量
         if (isExercising && Math.random() > 0.7) {
            addParticles(1, 'energy', 'liver', 'muscle');
         }
       } else if (energyNeeded > 0 && fatStore > 0) {
-        setFatStore(prev => Math.max(0, prev - energyNeeded * 0.1)); // 脂肪燃燒較慢
+        setFatStore(prev => Math.max(0, prev - energyNeeded * 0.1));
          if (isExercising && Math.random() > 0.8) {
            addParticles(1, 'fat-burn', 'fat', 'muscle');
         }
       }
 
-      // 2. 消化過程 (胃 -> 血液)
+      // 2. 消化過程
       if (stomachContent > 0) {
-        setIsDigesting(true);
         const amountDigested = Math.min(stomachContent, DIGESTION_RATE);
         setStomachContent(prev => prev - amountDigested);
-        
-        // 血糖上升
         setBloodSugar(prev => prev + amountDigested * 1.2);
         
-        // 產生消化粒子效果
         if (Math.random() > 0.5) {
           addParticles(1, 'glucose', 'stomach', 'blood');
         }
-      } else {
-        setIsDigesting(false);
       }
 
-      // 3. 儲存過程 (胰島素作用：血液 -> 肝醣 -> 脂肪)
-      if (bloodSugar > 60) { // 血糖過高，開始儲存
+      // 3. 儲存過程
+      if (bloodSugar > 60) {
         const excessSugar = bloodSugar - 60;
         const storageRate = ABSORPTION_RATE;
         
         let amountToStore = Math.min(excessSugar, storageRate);
-        
-        // 降低血糖
         setBloodSugar(prev => prev - amountToStore);
 
-        // 優先存入肝醣
         if (glycogenStore < MAX_GLYCOGEN) {
           setGlycogenStore(prev => Math.min(MAX_GLYCOGEN, prev + amountToStore));
           if (Math.random() > 0.5) addParticles(1, 'store-glycogen', 'blood', 'liver');
           setMessage("胰島素分泌中：正在將葡萄糖轉化為肝醣儲存。");
         } else {
-          // 肝醣滿了，轉化為脂肪 (De novo lipogenesis)
-          setFatStore(prev => prev + amountToStore * 0.8); // 轉換損耗
+          setFatStore(prev => prev + amountToStore * 0.8);
           if (Math.random() > 0.5) addParticles(1, 'store-fat', 'blood', 'fat');
           setMessage("肝醣庫已滿！多餘熱量正在轉化為脂肪堆積。");
         }
@@ -121,7 +106,7 @@ const MetabolismSim = () => {
     }, 50);
 
     return () => clearInterval(interval);
-  }, [stomachContent, bloodSugar, glycogenStore, fatStore, isExercising]);
+  }, [stomachContent, bloodSugar, glycogenStore, fatStore, isExercising, addParticles]);
 
   // --- 使用者操作 ---
   const handleEat = () => {
@@ -148,21 +133,17 @@ const MetabolismSim = () => {
   // --- SVG 座標定義 ---
   const coords = {
     stomach: { x: 300, y: 150 },
-    blood: { x: 400, y: 300 }, // 血管中心
-    liver: { x: 550, y: 200 }, // 肝臟/肌肉 (肝醣)
-    fat: { x: 550, y: 450 },    // 脂肪組織
-    muscle: { x: 250, y: 450 }  // 消耗端
+    blood: { x: 400, y: 300 },
+    liver: { x: 550, y: 200 },
+    fat: { x: 550, y: 450 },
+    muscle: { x: 250, y: 450 }
   };
 
-  // 取得路徑座標
   const getPath = (p) => {
     const start = coords[p.start];
     const end = coords[p.end];
-    // 簡單的線性插值，實際路徑可以是曲線
     const currentX = start.x + (end.x - start.x) * p.progress;
     const currentY = start.y + (end.y - start.y) * p.progress;
-    
-    // 為了視覺效果增加一點隨機擾動或曲線
     const archY = p.progress < 0.5 ? p.progress * 40 : (1-p.progress) * 40;
     
     return { x: currentX, y: currentY - archY }; 
@@ -299,13 +280,9 @@ const MetabolismSim = () => {
 
               {/* 連接管路 (血管/路徑) */}
               <g stroke="#e2e8f0" strokeWidth="15" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                {/* 胃 -> 血管 */}
                 <path d="M300 180 Q 300 300 370 300" /> 
-                {/* 血管 -> 肝/肌 */}
                 <path d="M430 300 L 520 230" />
-                {/* 血管 -> 脂肪 */}
                 <path d="M400 330 L 400 450 L 520 450" />
-                {/* 脂肪/肝 -> 肌肉消耗 */}
                 <path d="M550 230 Q 400 230 280 420" strokeOpacity={isExercising ? 1 : 0.2} stroke="#fb7185" />
                 <path d="M520 450 Q 400 500 280 480" strokeOpacity={isExercising ? 1 : 0.2} stroke="#fb7185" />
               </g>
@@ -314,7 +291,6 @@ const MetabolismSim = () => {
               <g transform="translate(250, 80)">
                 <text x="50" y="-10" textAnchor="middle" className="text-sm font-bold fill-slate-500">胃 (消化)</text>
                 <path d="M20,0 C80,0 90,80 50,100 C10,120 -10,60 20,0" fill="#ffe4e6" stroke="#fda4af" strokeWidth="3" />
-                {/* 食物填充動畫 */}
                 <clipPath id="stomachClip">
                     <path d="M20,0 C80,0 90,80 50,100 C10,120 -10,60 20,0" />
                 </clipPath>
@@ -322,7 +298,7 @@ const MetabolismSim = () => {
                 {stomachContent > 0 && <text x="50" y="60" textAnchor="middle" fill="white" className="text-xs">消化中...</text>}
               </g>
 
-              {/* 2. 血管系統 Bloodstream (中央樞紐) */}
+              {/* 2. 血管系統 Bloodstream */}
               <g transform="translate(370, 270)">
                 <circle r="40" fill={bloodSugar > 70 ? "#fca5a5" : "#fecaca"} stroke="#ef4444" strokeWidth={bloodSugar > 70 ? 4 : 2} className="transition-all duration-500" />
                 <text x="0" y="5" textAnchor="middle" className="text-xs font-bold fill-red-800">血管/循環</text>
@@ -331,12 +307,10 @@ const MetabolismSim = () => {
                 </text>
               </g>
 
-              {/* 3. 肝醣庫 Glycogen (肝臟/肌肉) */}
+              {/* 3. 肝醣庫 Glycogen */}
               <g transform="translate(520, 150)">
                 <text x="60" y="-10" textAnchor="middle" className="text-sm font-bold fill-slate-500">肝臟 & 肌肉 (肝醣)</text>
-                {/* 外框 */}
                 <path d="M0,20 L120,20 L120,100 L0,100 Z" fill="#dbeafe" stroke="#3b82f6" strokeWidth="3" rx="10" />
-                {/* 填充條 */}
                 <rect x="5" y={100 - (glycogenStore * 0.8)} width="110" height={glycogenStore * 0.8} fill="#3b82f6" className="transition-all duration-500" rx="4" />
                 <path d="M10,40 L40,10 L70,40 L40,70 Z" fill="none" stroke="white" opacity="0.3" transform="translate(70, 20)" />
                 <text x="60" y="60" textAnchor="middle" fill={glycogenStore > 50 ? "white" : "#1e40af"} className="text-xs">
@@ -347,7 +321,6 @@ const MetabolismSim = () => {
               {/* 4. 脂肪組織 Adipose */}
               <g transform="translate(520, 400)">
                 <text x="60" y="-10" textAnchor="middle" className="text-sm font-bold fill-slate-500">脂肪組織 (長期)</text>
-                {/* 蜂巢狀結構代表脂肪細胞 */}
                 <path d="M10,20 L35,10 L60,20 L60,50 L35,60 L10,50 Z" fill={fatStore > 5 ? "#fde047" : "#fef9c3"} stroke="#eab308" strokeWidth="2" />
                 <path d="M65,20 L90,10 L115,20 L115,50 L90,60 L65,50 Z" fill={fatStore > 20 ? "#fde047" : "#fef9c3"} stroke="#eab308" strokeWidth="2" />
                 <path d="M37,55 L62,45 L87,55 L87,85 L62,95 L37,85 Z" fill={fatStore > 50 ? "#fde047" : "#fef9c3"} stroke="#eab308" strokeWidth="2" />
@@ -356,7 +329,7 @@ const MetabolismSim = () => {
                 </text>
               </g>
 
-              {/* 5. 運動消耗端 (肌肉活動) */}
+              {/* 5. 運動消耗端 */}
               <g transform="translate(200, 420)">
                  <text x="50" y="-15" textAnchor="middle" className="text-sm font-bold fill-slate-500">肌肉活動</text>
                  <rect x="0" y="0" width="100" height="60" rx="8" fill={isExercising ? "#fecaca" : "#f1f5f9"} stroke={isExercising ? "#ef4444" : "#cbd5e1"} strokeWidth="3" className="transition-colors duration-300" />
@@ -364,7 +337,6 @@ const MetabolismSim = () => {
                  <text x="50" y="85" textAnchor="middle" fill="#64748b" className="text-xs">
                    {isExercising ? "消耗大量 ATP" : "基礎代謝"}
                  </text>
-                 {/* 閃電圖示 */}
                  {isExercising && (
                    <g transform="translate(35, 15) scale(0.8)">
                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="#ef4444" stroke="none">
@@ -377,10 +349,10 @@ const MetabolismSim = () => {
               {/* 渲染粒子 */}
               {particles.map(p => {
                 const pos = getPath(p);
-                let color = '#fb923c'; // 食物 (橘)
-                if (p.type === 'glucose') color = '#ef4444'; // 葡萄糖 (紅)
-                if (p.type === 'store-glycogen') color = '#3b82f6'; // 肝醣 (藍)
-                if (p.type === 'store-fat') color = '#eab308'; // 脂肪 (黃)
+                let color = '#fb923c';
+                if (p.type === 'glucose') color = '#ef4444';
+                if (p.type === 'store-glycogen') color = '#3b82f6';
+                if (p.type === 'store-fat') color = '#eab308';
                 
                 return (
                   <circle 
@@ -395,14 +367,13 @@ const MetabolismSim = () => {
                 );
               })}
 
-              {/* 箭頭指引流向 */}
+              {/* 箭頭指引 */}
               <defs>
                 <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
                   <path d="M0,0 L10,5 L0,10" fill="#94a3b8" />
                 </marker>
               </defs>
               
-              {/* 說明文字標籤 (連接線上的) */}
               <text x="340" y="230" className="text-[10px] fill-slate-400" transform="rotate(60 340,230)">消化吸收</text>
               <text x="480" y="270" className="text-[10px] fill-slate-400">肝醣合成</text>
               <text x="470" y="400" className="text-[10px] fill-slate-400">脂肪生成</text>
